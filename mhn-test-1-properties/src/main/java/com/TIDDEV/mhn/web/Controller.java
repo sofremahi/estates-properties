@@ -63,7 +63,7 @@ public class Controller {
     }
 
     @GetMapping("/find/estate/{page}/{size}/{zoneCode}/{startDate}/{endDate}")
-    public Response<Page<Estate>> estatePageByDate(@PathVariable("page") int page,
+    public Response<List<Estate>> estatePageByDate(@PathVariable("page") int page,
                                                    @PathVariable("size") int size,
                                                    @PathVariable("zoneCode") Long zoneCode,
                                                    @PathVariable("startDate")

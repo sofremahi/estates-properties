@@ -11,6 +11,8 @@ import com.TIDDEV.mhn.service.model.Province;
 import com.TIDDEV.mhn.service.model.Zone;
 import com.TIDDEV.mhn.service.modelDto.OrderPriceForZones;
 import com.TIDDEV.mhn.web.BusinessException;
+import lombok.AllArgsConstructor;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jfree.chart.ChartFactory;
@@ -23,9 +25,15 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
+
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.time.LocalDate;
+import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
+
 @Service
 @Slf4j
 @RequiredArgsConstructor
@@ -83,20 +91,22 @@ public class ServiceApp {
         return estateRepository.estatesPage(pageable, provinceCode, cityCode, zoneCode).getContent();
     }
 
-    public Page<Estate> estatePageOfZoneByYear(int page, int size, Long zoneCode, Integer start, Integer end) {
+    public List<Estate> estatePageOfZoneByYear(int page, int size, Long zoneCode, Integer start, Integer end) {
         Pageable pageable = PageRequest.of(page, size);
         if (zoneCode != null) {
             zoneRepository.findById(zoneCode).orElseThrow(
                     () -> new BusinessException("zone.not.found.by.code", new Object[]{zoneCode})
             );
         }
-        return estateRepository.estatePageOfZoneByYear(pageable, zoneCode, start, end);
+        return estateRepository.estatePageOfZoneByYear(pageable, zoneCode, start, end).getContent();
     }
 
     public byte[] chartAvgPricePerYear(Long provinceCode, Long cityCode, Long zoneCode, Integer year)
             throws Exception {
-        // data
-        List<OrderPriceForZones> data = estateRepository.findExpensiveZones(provinceCode, cityCode, zoneCode, year);
+        // data database
+//        List<OrderPriceForZones> data = estateRepository.findExpensiveZones(provinceCode, cityCode, zoneCode, year);
+        //data memory
+        List<OrderPriceForZones> data = mostExpensiveZonesMem(provinceCode, cityCode, zoneCode, year);
 
         // export to chart
         DefaultCategoryDataset dataset = new DefaultCategoryDataset();
@@ -137,4 +147,28 @@ public class ServiceApp {
         }
         return estateRepository.findExpensiveZones(provinceCode, cityCode, zoneCode, year);
     }
+
+    public List<OrderPriceForZones> mostExpensiveZonesMem(Long provinceCode, Long cityCode, Long zoneCode, Integer year) {
+        List<Estate> estates = estateRepository.findAll();
+        return estates.stream()
+                .filter(e -> (provinceCode == null || e.getZone().getCity().getProvince().getCode().equals(provinceCode)))
+                .filter(e -> (cityCode == null || e.getZone().getCity().getCode().equals(cityCode)))
+                .filter(e -> (zoneCode == null || e.getZone().getCode().equals(zoneCode)))
+                .filter(e -> (year == null || e.getDateYear().getYear() == year))
+                .collect(Collectors.groupingBy(e -> new ZoneYearKey(e.getZone().getCode(), e.getZone().getTitle(), e.getDateYear()),
+                        Collectors.averagingDouble(e -> e.getPricePerSquareMeter().doubleValue())))
+                .entrySet().stream()
+                .map(entry -> new OrderPriceForZones(entry.getKey().getZoneCode(), entry.getKey().getZoneTitle(), entry.getKey().getYear(), entry.getValue()))
+                .sorted(Comparator.comparingDouble(OrderPriceForZones::getAveragePrice).reversed())
+                .collect(Collectors.toList());
+    }
+
+    @Data
+    @AllArgsConstructor
+    private static class ZoneYearKey {
+        private Long zoneCode;
+        private String zoneTitle;
+        private LocalDate year;
+    }
+
 }
